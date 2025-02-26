@@ -1,0 +1,442 @@
+---
+title: "ASDS 6303 Final Project Code"
+output: word_document
+date: "2024-12-08"
+name: "Harshitha Atluri, Jean Paul Rajesh, and Henry Berrios"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## loading libraries
+```{r libraries}
+library(tidyverse)
+library(caret)
+library(corrplot)
+library(randomForest)
+library(xgboost)
+library(pROC)
+library(corrplot)
+library(ggplot2)
+```
+
+## loading data set
+```{r data set}
+data <- read.csv("diabetes_binary.csv")
+```
+
+## data preprocessing
+```{r data summary}
+summary(data)
+
+str(data)
+```
+
+```{r missing data check}
+colSums(is.na(data))
+```
+
+```{r turning categorical variables as factors}
+# Convert selected variables to factors
+data$HighBP <- factor(data$HighBP)
+data$HighChol <- factor(data$HighChol)
+data$CholCheck <- factor(data$CholCheck)
+data$Smoker <- factor(data$Smoker)
+data$Stroke <- factor(data$Stroke)
+data$HeartDiseaseorAttack <- factor(data$HeartDiseaseorAttack)
+data$PhysActivity <- factor(data$PhysActivity)
+data$Fruits <- factor(data$Fruits)
+data$Veggies <- factor(data$Veggies)
+data$HvyAlcoholConsump <- factor(data$HvyAlcoholConsump)
+data$AnyHealthcare <- factor(data$AnyHealthcare)
+data$NoDocbcCost <- factor(data$NoDocbcCost)
+data$DiffWalk <- factor(data$DiffWalk)
+data$Sex <- factor(data$Sex)
+data$Diabetes_binary <- factor(data$Diabetes_binary)
+```
+
+```{r ordinal varialbes to ordered}
+# convert ordinal variables to ordered factors
+data$GenHlth <- factor(data$GenHlth, levels = c(1, 2, 3, 4, 5), ordered = TRUE)
+data$Education <- factor(data$Education, levels = c(1, 2, 3, 4, 5, 6), ordered = TRUE)
+data$Age <- factor(data$Age, levels = c(1:13), ordered = TRUE)
+data$Income <- factor(data$Income, levels = c(1:8), ordered = TRUE)
+```
+
+## Exploratory Data Analysis (EDA)
+```{r correlation matrix for BMI, MentHlth, and PhysHlth}
+# target and continuous variables
+cont_data <- data[, c("Diabetes_binary", "BMI", "MentHlth", "PhysHlth")]
+
+# compute the correlation matrix for continuous variables only)
+cor_matrix_cont <- cor(cont_data[, -1]) 
+
+# visualize the correlation matrix
+corrplot(cor_matrix_cont, method = "color", type = "upper",
+         tl.col = "black", tl.srt = 45,
+         title = "Correlation Matrix (Continuous Variables)", 
+         mar = c(0, 0, 1, 0),          
+         addCoef.col = "black",        
+         number.cex = 0.7)             
+```
+
+```{r stacked ordinal bar chart for Education}
+# bar chart for Education (Ordinal)
+ggplot(data, aes(x = factor(Education), fill = factor(Diabetes_binary))) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("0" = "blue", "1" = "red"), 
+                    labels = c("0" = "No Diabetes", "1" = "Prediabetes/Diabetes"),
+                    name = "Diabetes Status") +
+  labs(title = "Proportion of Diabetes Status by Education Level",
+       x = "Education Level (1 = Never attended school, 6 = College Graduate)", y = "Proportion") +
+  theme_minimal()
+```
+
+```{r stacked ordinal bar chart for GenHlth}
+# bar chart for GenHlth (Ordinal)
+ggplot(data, aes(x = factor(GenHlth), fill = factor(Diabetes_binary))) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("0" = "blue", "1" = "red"), 
+                    labels = c("0" = "No Diabetes", "1" = "Prediabetes/Diabetes"),
+                    name = "Diabetes Status") +
+  labs(title = "Proportion of Diabetes Status by General Health Rating",
+       x = "General Health (1 = Excellent, 5 = Poor)", y = "Proportion") +
+  theme_minimal()
+```
+
+```{r stacked ordinal chart for Age}
+# bar chart for Age (Ordinal)
+ggplot(data, aes(x = factor(Age), fill = factor(Diabetes_binary))) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("0" = "blue", "1" = "red"), 
+                    labels = c("0" = "No Diabetes", "1" = "Prediabetes/Diabetes"),
+                    name = "Diabetes Status") +
+  labs(title = "Proportion of Age by Diabetes Status",
+       x = "Age (1 = 18-24, 13 = 80 or Older)", y = "Proportion") +
+  theme_minimal()
+```
+
+```{r stacked ordinal chart for Income}
+# bar chart for Income (Ordinal)
+ggplot(data, aes(x = factor(Income), fill = factor(Diabetes_binary))) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("0" = "blue", "1" = "red"), 
+                    labels = c("0" = "No Diabetes", "1" = "Prediabetes/Diabetes"),
+                    name = "Diabetes Status") +
+  labs(title = "Proportion of Income by Diabetes Status",
+       x = "Income (1 = Less than $10,000, 8 = $75,000)", y = "Proportion") +
+  theme_minimal()
+```
+
+```{r function to create stacked bar plots}
+# function to create stacked bar plots
+stacked_bar_plot <- function(variable, description) {
+  ggplot(data, aes(x = factor(!!sym(variable)), fill = factor(Diabetes_binary))) +
+    geom_bar(position = "fill") +
+    scale_fill_manual(values = c("0" = "blue", "1" = "red"),
+                      labels = c("0" = "No Diabetes", "1" = "Prediabetes/Diabetes"),
+                      name = "Diabetes Status") +
+    labs(title = paste("Proportion of Diabetes Status by", variable),
+         x = description,  
+         y = "Proportion") +
+    theme_minimal()
+}
+```
+
+```{r stacked bar plots for the categorical binary variables}
+# stacked bar plots for categorical variables
+stacked_bar_plot("HighBP", "Presence of High BP (0 = No, 1 = Yes)")
+
+stacked_bar_plot("HighChol", "Presence of High Cholesterol (0 = No, 1 = Yes)")
+
+stacked_bar_plot("PhysActivity", "Physical Activity in Past 30 Days (0 = No, 1 = Yes)")
+
+stacked_bar_plot("DiffWalk", "Difficulty Walking or Climbing Stairs (0 = No, 1 = Yes)")
+
+stacked_bar_plot("CholCheck", "Cholesterol Check in 5 Years (0 = No, 1 = Yes)")
+
+stacked_bar_plot("Smoker", "Smoked at least 100 Cigarettes (0 = No, 1 = Yes)")
+
+stacked_bar_plot("HeartDiseaseorAttack", "Coronary Heart Disease or Heart Attack (0 = No, 1 = Yes)")
+
+stacked_bar_plot("Fruits", "Consume Fruit 1 or More Per Day (0 = No, 1 = Yes)")
+
+stacked_bar_plot("Veggies", "Consume Veggies 1 More Per Day (0 = No, 1 = Yes)")
+
+stacked_bar_plot("HvyAlcoholConsump", "Alcohol Consumption (0 = No, 1 = Yes)")
+
+stacked_bar_plot("AnyHealthcare", "Healthcare Coverage (0 = No, 1 = Yes)")
+
+stacked_bar_plot("NoDocbcCost", "Affording Healthcare (0 = No, 1 = Yes)")
+
+stacked_bar_plot("Stroke", "Previous Stroke (0 = No, 1 = Yes)")
+
+stacked_bar_plot("Sex", "0 = Female, 1 = Male")
+```
+
+```{r botplot function for continuous variables}
+# function to create individual boxplots
+create_boxplot <- function(variable, description) {
+  ggplot(data, aes(x = factor(Diabetes_binary), y = !!sym(variable), fill = factor(Diabetes_binary))) +
+    geom_boxplot() +
+    scale_fill_manual(values = c("0" = "blue", "1" = "red"),
+                      labels = c("0" = "No Diabetes", "1" = "Prediabetes/Diabetes"),
+                      name = "Diabetes Status") +
+    labs(title = paste("Boxplot of", description, "by Diabetes Status"),
+         x = "Diabetes Status", y = description) +
+    theme_minimal()
+}
+```
+
+```{r boxplot for BMI}
+# bmi boxplot
+create_boxplot("BMI", "Body Mass Index (BMI)")
+```
+
+```{r histograms for MentHlth and PhysHlth}
+# histogram for MentHlth
+ggplot(data, aes(x = MentHlth)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "black") +
+  labs(title = "Histogram of Days of Poor Mental Health",
+       x = "Days of Poor Mental Health (0-30)", y = "Count") +
+  theme_minimal()
+
+# histogram for PhysHlth
+ggplot(data, aes(x = PhysHlth)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "black") +
+  labs(title = "Histogram of Days of Poor Physical Health",
+       x = "Days of Poor Physical Health (0-30)", y = "Count") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(data, aes(x = factor(Diabetes_binary, labels = c("No Diabetes", "Prediabetes/Diabetes")))) +
+  geom_bar(fill = c("blue", "red")) +
+  labs(
+    title = "Distribution of Diabetes Status",
+    x = "Diabetes Status",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+## Model Training
+```{r libraries for model training}
+library(caret)
+set.seed(1)
+```
+
+```{r data splits}
+# split the data into 80% training and 20% testing
+train_index <- createDataPartition(data$Diabetes_binary, p = 0.8, list = FALSE)
+train_data <- data[train_index, ]
+test_data <- data[-train_index, ]
+```
+
+## Logistic Regression
+```{r training logistic regression}
+# train logistic regression
+log_model <- glm(Diabetes_binary ~ ., data = train_data, family = binomial)
+```
+
+```{r log summary}
+# summary of the model
+summary(log_model)
+```
+
+```{r predictions on the test data}
+# making predictions on the test data
+log_preds <- predict(log_model, newdata = test_data, type = "response")
+log_class <- ifelse(log_preds > 0.5, 1, 0)
+```
+
+```{r confusion matrix of the log model}
+# confusion matrix
+confusionMatrix(factor(log_class), factor(test_data$Diabetes_binary))
+```
+
+## Decision Tree
+```{r libraries for decision tree}
+library(rpart)
+library(rpart.plot)
+```
+
+```{r training decision tree}
+# train Decision Tree
+dt_model <- rpart(Diabetes_binary ~ ., data = train_data, method = "class")
+```
+
+```{r plot for decision tree}
+# visualize the decision tree
+rpart.plot(dt_model, type = 3, extra = 104, under = TRUE, main = "Decision Tree")
+```
+
+```{r}
+# Extract feature importance
+dt_importance <- dt_model$variable.importance
+
+# Convert to a data frame for plotting
+dt_importance_df <- data.frame(Feature = names(dt_importance),
+                               Importance = dt_importance)
+
+# Sort by importance
+dt_importance_df <- dt_importance_df[order(-dt_importance_df$Importance), ]
+print(dt_importance_df)
+
+library(ggplot2)
+
+# Plot feature importance
+ggplot(dt_importance_df, aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Feature Importance (Decision Tree)",
+       x = "Features", y = "Importance") +
+  theme_minimal()
+```
+
+```{r predicitions on test set}
+# make predictions on the test set
+dt_preds <- predict(dt_model, newdata = test_data, type = "class")
+```
+
+```{r confusion matrix for decision tree}
+# confusion Matrix
+confusionMatrix(factor(dt_preds), factor(test_data$Diabetes_binary))
+```
+
+```{r AUC curve for decision tree}
+# calculate AUC-ROC
+library(pROC)
+dt_prob <- predict(dt_model, newdata = test_data, type = "prob")[, 2]
+dt_roc <- roc(test_data$Diabetes_binary, dt_prob)
+plot(dt_roc, col = "blue", main = "ROC Curve - Decision Tree")
+auc(dt_roc)
+```
+
+## Random Forest
+```{r libraries for random forest}
+library(randomForest)
+```
+
+```{r train random forest}
+rf_model <- randomForest(factor(Diabetes_binary) ~ ., data = train_data, ntree = 500, importance = TRUE)
+```
+
+```{r summary of random forest}
+# summary of the model
+print(rf_model)
+```
+
+```{r prediction on test set for random forest}
+# predictions on the test set
+rf_preds <- predict(rf_model, newdata = test_data, type = "class")
+```
+
+```{r confusion matrix for random forest}
+# confusion Matrix
+conf_matrix <- confusionMatrix(rf_preds, test_data$Diabetes_binary)
+
+print(conf_matrix)
+
+overall_metrics <- conf_matrix$overall
+print(overall_metrics)
+```
+
+```{r AUC curve for random forest}
+# calculate AUC-ROC
+rf_prob <- predict(rf_model, newdata = test_data, type = "prob")[, 2]
+rf_roc <- roc(test_data$Diabetes_binary, rf_prob)
+plot(rf_roc, col = "red", main = "ROC Curve - Random Forest")
+auc(rf_roc)
+```
+
+
+
+```{r feature importance}
+# feature importance
+# compute feature importance
+rf_importance <- importance(rf_model)
+
+# convert to a data frame for easier plotting
+rf_importance_df <- data.frame(Feature = rownames(rf_importance),
+                               Importance = rf_importance[, "MeanDecreaseGini"])
+
+# sort by importance
+rf_importance_df <- rf_importance_df[order(-rf_importance_df$Importance), ]
+print(rf_importance_df)
+
+# plot feature importance
+ggplot(rf_importance_df, aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Feature Importance (Random Forest)",
+       x = "Features", y = "Mean Decrease in Gini Index") +
+  theme_minimal()
+```
+
+## Model Comparisons
+```{r Confusion matrix for models}
+# function to create a confusion matrix heatmap
+plot_confusion_matrix <- function(conf_matrix, model_name) {
+  library(ggplot2)
+  cm_table <- as.data.frame(conf_matrix$table)
+  colnames(cm_table) <- c("Prediction", "Reference", "Count")
+  
+  ggplot(cm_table, aes(x = Reference, y = Prediction, fill = Count)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = Count), color = "black", size = 5) +
+    scale_fill_gradient(low = "white", high = "steelblue") +
+    labs(title = paste("Confusion Matrix for", model_name),
+         x = "Actual", y = "Predicted", fill = "Count") +
+    theme_minimal()
+}
+
+# generate confusion matrices for each model
+cm_log <- confusionMatrix(factor(log_class), factor(test_data$Diabetes_binary))
+cm_dt <- confusionMatrix(factor(dt_preds), factor(test_data$Diabetes_binary))
+cm_rf <- confusionMatrix(factor(rf_preds), factor(test_data$Diabetes_binary))
+
+# plot confusion matrices
+plot_confusion_matrix(cm_log, "Logistic Regression")
+plot_confusion_matrix(cm_dt, "Decision Tree")
+plot_confusion_matrix(cm_rf, "Random Forest")
+```
+
+```{r all ROC Curves together}
+# plot all ROC curves together
+plot(log_roc, col = "blue", lwd = 2, main = "ROC Curve Comparison")
+plot(dt_roc, col = "green", lwd = 2, add = TRUE)
+plot(rf_roc, col = "red", lwd = 2, add = TRUE)
+legend("bottomright", legend = c("Logistic Regression", "Decision Tree", "Random Forest"),
+       col = c("blue", "green", "red"), lwd = 2)
+```
+
+```{r other metrics compared}
+# calculate accuracy, sensitivity, specificity, and F1-score for each model
+calc_metrics <- function(conf_matrix) {
+  accuracy <- conf_matrix$overall["Accuracy"]
+  sensitivity <- conf_matrix$byClass["Sensitivity"]
+  specificity <- conf_matrix$byClass["Specificity"]
+  precision <- conf_matrix$byClass["Precision"]
+  recall <- sensitivity
+  f1_score <- 2 * (precision * recall) / (precision + recall)
+  
+  data.frame(Accuracy = accuracy, Sensitivity = sensitivity, Specificity = specificity, F1_Score = f1_score)
+}
+
+# generate metrics for each model
+metrics_log <- calc_metrics(cm_log)
+metrics_dt <- calc_metrics(cm_dt)
+metrics_rf <- calc_metrics(cm_rf)
+
+# combine into a single table
+metrics_table <- rbind(
+  Logistic_Regression = metrics_log,
+  Decision_Tree = metrics_dt,
+  Random_Forest = metrics_rf
+)
+
+# print the table
+print(metrics_table)
+```
